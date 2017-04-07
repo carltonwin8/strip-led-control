@@ -7,6 +7,8 @@ import RPi.GPIO as GPIO
 import argparse
 from time import sleep
 
+gpios = [17, 18, 22, 23]
+
 def tristate(args):
     GPIO.setup(args.led, GPIO.IN)
 
@@ -30,12 +32,24 @@ def toggle_continuous(args):
         sleep(delay)
         
 def brightness(args):
-    led = PWMLED(args.led)
-    led.value = args.level/100.0
-    input('Hit Enter to exit')
+    global gpios
+    led = args.led
+    freq = args.freq
+    duty = args.level
+    if led == 17 or led == 18:
+        qs = gpios_path(gpios, 'one')
+        gpios_en(qs, True)
+    elif led == 22 or led == 23:
+        ql, qh = gpios_path(gpios, 'two')
+        gpios_en(qs, True)
+    else:
+        gpios_en([led], True)
+    p = GPIO.PWM(led, freq)
+    p.start(duty)    
+    input('Hit Enter To Stop')
+    p.stop()
+    GPIO.cleanup()
     
-
-
 def glow_up(led, delay, start, end):
     for brightness in range(start, end + 1):
         led.value = brightness/100.0
@@ -62,12 +76,41 @@ def glow(args):
         sleep(args.highw/1000.0)
         glow_down(led, step, start, end)
         sleep(args.loww/1000.0)
+
+def gpios_en(gpios, en):
+    if en:
+        state = GPIO.OUT
+    else:
+        state = GPIO.IN
         
+    for gpio in gpios:
+        GPIO.setup(gpio, state)
+
+def gpios_on(gpios, on):
+    value = 1 if on == 'on' else 0
+    for gpio in gpios:
+        GPIO.output(gpio, value) 
+
+def gpios_path(gpios, path):
+    if path == 'one':
+        return gpios[:2]
+    else:
+        return gpios[2:]
+        
+def path(args):
+    global gpios
+    gpios_en(gpios, False) # disable gpios
+    qs = gpios_path(gpios, args.path)    
+    gpios_en(qs, True)
+    gpios_on(qs, args.on)
+
 def main():
     """
     Control LED light strip
     
     """
+    on_off = lambda parser: parser.add_argument('on', choices=['on', 'off'])
+
     parser = argparse.ArgumentParser(description='Contro the raspberry pi GPIO pins.')
     parser.add_argument('-l', '--led', help='LED to test', type=int, default=17)
     
@@ -84,9 +127,15 @@ def main():
     parser_s = subparsers.add_parser('tristate', help='tristate a LED')
     parser_s.set_defaults(func=tristate)
 
+    parser_s = subparsers.add_parser('path', help='select polarity of LED path')
+    parser_s.set_defaults(func=path)
+    parser_s.add_argument('path', choices=['one', 'two'])
+    on_off(parser_s)
+
     parser_s = subparsers.add_parser('bright', help='turns on an led at a specific brightness')
     parser_s.set_defaults(func=brightness)
     parser_s.add_argument('level', type=int, choices=range(1,101))
+    parser_s.add_argument('-f', '--freq', help='frequency in hz', type=int, default=1000)
 
     parser_s = subparsers.add_parser('glow', help='makes the LED glow')
     parser_s.set_defaults(func=glow)

@@ -1,0 +1,9 @@
+#!/bin/sh -e
+
+# LED Pin - wiringPi pin 0 is BCM_GPIO 17.
+
+PIN=0
+gpio mode $PIN in
+
+PIN=1
+gpio mode $PIN in
