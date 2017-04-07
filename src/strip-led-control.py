@@ -3,34 +3,30 @@
 """
 @author: Carlton Joseph
 """
-from gpiozero import LED, PWMLED
+import RPi.GPIO as GPIO
 import argparse
 from time import sleep
 
-#led = LED(17)
-#pwmled = PWMLED(17)
-
-def user_input(on):
-    fmtstr = "The LED is {}. Hit Enter to exit."
-    print(fmtstr.format("on" if on else "off"))
-    input()
+def tristate(args):
+    GPIO.setup(args.led, GPIO.IN)
 
 def turn(args):
-    led = LED(args.led)
+    led = args.led
+    GPIO.setup(led, GPIO.OUT)
     on = args.on == 'on'
     if on:
-        led.on()
+        GPIO.output(led,1)
     else:
-        led.off()
-    user_input(on)
+        GPIO.output(led,0)
 
 def toggle_continuous(args):
-    led = LED(args.led)
+    led = args.led
+    GPIO.setup(led, GPIO.OUT)
     delay = args.delay/1000.0
     while True:
-        led.on()
+        GPIO.output(led,0)
         sleep(delay)
-        led.off()
+        GPIO.output(led,1)
         sleep(delay)
         
 def brightness(args):
@@ -70,6 +66,7 @@ def glow(args):
 def main():
     """
     Control LED light strip
+    
     """
     parser = argparse.ArgumentParser(description='Contro the raspberry pi GPIO pins.')
     parser.add_argument('-l', '--led', help='LED to test', type=int, default=17)
@@ -83,6 +80,9 @@ def main():
     parser_s = subparsers.add_parser('toggle', help='toggle a LED continuously')
     parser_s.set_defaults(func=toggle_continuous)
     parser_s.add_argument('-d', '--delay', help='delay in milliseconds', type=int, default=0)
+
+    parser_s = subparsers.add_parser('tristate', help='tristate a LED')
+    parser_s.set_defaults(func=tristate)
 
     parser_s = subparsers.add_parser('bright', help='turns on an led at a specific brightness')
     parser_s.set_defaults(func=brightness)
@@ -100,7 +100,9 @@ def main():
     if len(vars(args)) < 2:
         parser.print_help()
         return
-
+    
+    GPIO.setmode(GPIO.BCM)
+    GPIO.setwarnings(False)
     args.func(args)
     
 if __name__ == "__main__":
