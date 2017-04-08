@@ -6,6 +6,8 @@
 import RPi.GPIO as GPIO
 import argparse
 from time import sleep
+import signal
+import sys
 
 gpios = [17, 18, 22, 23]
 
@@ -31,53 +33,39 @@ def toggle_continuous(args):
         GPIO.output(led,1)
         sleep(delay)
         
+    
 def brightness(args):
     global gpios
     led = args.led
     freq = args.freq
     duty = args.level
+    gpios_en(gpios, False) # disable gpios
     if led == 17 or led == 18:
         qs = gpios_path(gpios, 'one')
-        gpios_en(qs, True)
+        gpios_en(qs)
+        if led == 17:
+            gpios_on(18)
+        else:
+            gpios_on(17)
     elif led == 22 or led == 23:
-        ql, qh = gpios_path(gpios, 'two')
-        gpios_en(qs, True)
+        qs = gpios_path(gpios, 'two')
+        gpios_en(qs)
+        if led == 22:
+            gpios_on(23)
+        else:
+            gpios_on(22)
     else:
-        gpios_en([led], True)
+        gpios_en(led, True)
     p = GPIO.PWM(led, freq)
     p.start(duty)    
     input('Hit Enter To Stop')
     p.stop()
     GPIO.cleanup()
     
-def glow_up(led, delay, start, end):
-    for brightness in range(start, end + 1):
-        led.value = brightness/100.0
-        sleep(delay)
-    
-def glow_down(led, delay, start, end):
-    for brightness in range(end, start - 1, -1):
-        led.value = brightness/100.0
-        sleep(delay)
-    
-def glow(args):
-    start = args.start
-    end = args.end
-    if end < start:
-        fmtstr = 'The start value {} should be less than the end value {}.'
-        print(fmtstr.format(start, end))
-        return
-        
-    led = PWMLED(args.led)
-    delay = args.time/1000.0/2 # /2 for 1/2 on and 1/2 off time
-    step = delay/(end - start)
-    while True:
-        glow_up(led, step, start, end)
-        sleep(args.highw/1000.0)
-        glow_down(led, step, start, end)
-        sleep(args.loww/1000.0)
+gpiosa = lambda gpios: gpios if type(gpios) == list else [gpios]
 
-def gpios_en(gpios, en):
+def gpios_en(gpios, en=True):
+    gpios = gpiosa(gpios)
     if en:
         state = GPIO.OUT
     else:
@@ -86,7 +74,8 @@ def gpios_en(gpios, en):
     for gpio in gpios:
         GPIO.setup(gpio, state)
 
-def gpios_on(gpios, on):
+def gpios_on(gpios, on='on'):
+    gpios = gpiosa(gpios)
     value = 1 if on == 'on' else 0
     for gpio in gpios:
         GPIO.output(gpio, value) 
@@ -103,6 +92,82 @@ def path(args):
     qs = gpios_path(gpios, args.path)    
     gpios_en(qs, True)
     gpios_on(qs, args.on)
+
+def glow_up(led, delay, start, end):
+    for brightness in range(start, end + 1):
+        led.ChangeDutyCycle(brightness)
+        sleep(delay)
+    
+def glow_down(led, delay, start, end):
+    for brightness in range(end, start - 1, -1):
+        led.ChangeDutyCycle(brightness)
+        sleep(delay)
+
+def start_end(args):
+    start = args.start
+    end = args.end
+    if end < start:
+        fmtstr = 'The start value {} should be less than the end value {}.'
+        msg = fmtstr.format(start, end)
+        raise ValueError(msg)
+    return start, end
+
+def glow(args):
+    start, end = start_end(args)
+    gpios_en(gpios, False) # disable gpios
+    qs = gpios_path(gpios, 'one') # enable path one
+    gpios_en(qs, True)
+    gpios_on(qs, 'on')
+    led = GPIO.PWM(17, 1000)
+    led.start(start)
+    
+    delay = args.time/1000.0/2 # /2 for 1/2 on and 1/2 off time
+    step = delay/(end - start)
+    while True:
+        glow_up(led, step, start, end)
+        sleep(args.highw/1000.0)
+        glow_down(led, step, start, end)
+        sleep(args.loww/1000.0)
+
+def glow2(args):
+    start, end = start_end(args)
+    
+    delay = args.time/1000.0/2 # /2 for 1/2 on and 1/2 off time
+    step = delay/(end - start)
+    toggle = True
+
+    gpios_en(gpios, False) # disable gpios
+    one = 0
+    two = 0
+    toggle = 0
+    while True:
+        toggle = toggle + 1 if toggle < 1000 else 0
+        qs = gpios_path(gpios, 'one') if toggle % 2 else  gpios_path(gpios, 'two')
+        gpios_en(qs, True)
+        if toggle % 2:
+            one = one + 1 if one < 100 else 0
+            if one < 30:
+                gpios_on(qs, 'on')
+            else:
+                gpios_on(qs, 'off')
+        else:
+            two = two + 1 if two < 100 else 0            
+            gpios_on(qs, 'on')
+        #sleep(0.00001)
+        if toggle % 2:
+            if one < 50:
+                gpios_on(qs, 'off')
+        else:
+            gpios_on(qs, 'off')            
+        gpios_en(qs, False)
+        
+def signal_handler(signal, frame):
+        global gpios
+        print('You pressed Ctrl+C!')
+        gpios_en(gpios, False) # disable gpios
+        sys.exit(0)
+
+signal.signal(signal.SIGINT, signal_handler)
 
 def main():
     """
@@ -137,13 +202,27 @@ def main():
     parser_s.add_argument('level', type=int, choices=range(1,101))
     parser_s.add_argument('-f', '--freq', help='frequency in hz', type=int, default=1000)
 
+    interval = lambda parser: parser.add_argument('-t', '--time', type=int, default=5000, help="glow interval in milliseconds")
+    start = lambda parser: parser.add_argument('-s', '--start', type=int, default=0, choices=range(0,100), help="percent brightness to start with")
+    end = lambda parser: parser.add_argument('-e', '--end', type=int, default=100, choices=range(0,100), help="percent brightness to end with")
+    loww = lambda parser: parser.add_argument('-l', '--loww', type=int, default=1000, help="wait time at low brightness")
+    highw = lambda parser: parser.add_argument('-b', '--highw', type=int, default=1000, help="wait time at high brightness")
+
     parser_s = subparsers.add_parser('glow', help='makes the LED glow')
     parser_s.set_defaults(func=glow)
-    parser_s.add_argument('-t', '--time', type=int, default=5000, help="glow interval in milliseconds")
-    parser_s.add_argument('-s', '--start', type=int, default=0, choices=range(0,100), help="percent brightness to start with")
-    parser_s.add_argument('-e', '--end', type=int, default=100, choices=range(0,100), help="percent brightness to end with")
-    parser_s.add_argument('-l', '--loww', type=int, default=1000, help="wait time at low brightness")
-    parser_s.add_argument('-b', '--highw', type=int, default=1000, help="wait time at high brightness")
+    interval(parser_s)
+    start(parser_s)
+    end(parser_s)
+    loww(parser_s)
+    highw(parser_s)
+
+    parser_s = subparsers.add_parser('glow2', help='makes two LEDs glow')
+    parser_s.set_defaults(func=glow2)
+    interval(parser_s)
+    start(parser_s)
+    end(parser_s)
+    loww(parser_s)
+    highw(parser_s)
 
     args = parser.parse_args()
     if len(vars(args)) < 2:
