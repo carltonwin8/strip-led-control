@@ -10,6 +10,7 @@ import signal
 import sys
 
 gpios = [17, 18, 22, 23]
+debug = False
 
 def tristate(args):
     GPIO.setup(args.led, GPIO.IN)
@@ -94,9 +95,18 @@ def path(args):
     gpios_on(qs, args.on)
 
 def glow_up(led, delay, start, end):
+    global debug
+    stop_in = 0
     for brightness in range(start, end + 1):
         led.ChangeDutyCycle(brightness)
         sleep(delay)
+        if debug:
+            if stop_in == 0:
+                msg = "{} {} {} Enter stop in value =>"
+                strfmt = msg.format(start, end, brightness)
+                stop_in = int(input(strfmt) or "0")
+            else:
+                stop_in -= 1
     
 def glow_down(led, delay, start, end):
     for brightness in range(end, start - 1, -1):
@@ -114,11 +124,15 @@ def start_end(args):
 
 def glow(args):
     start, end = start_end(args)
-    gpios_en(gpios, False) # disable gpios
-    qs = gpios_path(gpios, 'one') # enable path one
+    gpios_en(gpios) 
+    gpios_on(gpios, False) 
+    qs = gpios_path(gpios, args.path)
     gpios_en(qs, True)
     gpios_on(qs, 'on')
-    led = GPIO.PWM(17, 1000)
+    if args.top == 'top':
+        led = GPIO.PWM(qs[1], 1000)
+    else:
+        led = GPIO.PWM(qs[0], 1000)
     led.start(start)
     
     delay = args.time/1000.0/2 # /2 for 1/2 on and 1/2 off time
@@ -178,6 +192,7 @@ def main():
 
     parser = argparse.ArgumentParser(description='Contro the raspberry pi GPIO pins.')
     parser.add_argument('-l', '--led', help='LED to test', type=int, default=17)
+    parser.add_argument('-s', '--stop', help='Stop at debug break points', action='store_true')
     
     subparsers = parser.add_subparsers(help='Command to execute')
 
@@ -192,11 +207,13 @@ def main():
     parser_s = subparsers.add_parser('tristate', help='tristate a LED')
     parser_s.set_defaults(func=tristate)
 
+    path = lambda parser: parser.add_argument('path', choices=['one', 'two'])
+
     parser_s = subparsers.add_parser('path', help='select polarity of LED path')
     parser_s.set_defaults(func=path)
-    parser_s.add_argument('path', choices=['one', 'two'])
     on_off(parser_s)
-
+    path(parser_s)
+    
     parser_s = subparsers.add_parser('bright', help='turns on an led at a specific brightness')
     parser_s.set_defaults(func=brightness)
     parser_s.add_argument('level', type=int, choices=range(1,101))
@@ -207,6 +224,7 @@ def main():
     end = lambda parser: parser.add_argument('-e', '--end', type=int, default=100, choices=range(0,100), help="percent brightness to end with")
     loww = lambda parser: parser.add_argument('-l', '--loww', type=int, default=1000, help="wait time at low brightness")
     highw = lambda parser: parser.add_argument('-b', '--highw', type=int, default=1000, help="wait time at high brightness")
+    top = lambda parser: parser.add_argument('-q', '--top', choices=['top','bottom'], help="transistor that toggles", default='bottom')
 
     parser_s = subparsers.add_parser('glow', help='makes the LED glow')
     parser_s.set_defaults(func=glow)
@@ -215,6 +233,8 @@ def main():
     end(parser_s)
     loww(parser_s)
     highw(parser_s)
+    path(parser_s)
+    top(parser_s)
 
     parser_s = subparsers.add_parser('glow2', help='makes two LEDs glow')
     parser_s.set_defaults(func=glow2)
@@ -231,6 +251,8 @@ def main():
     
     GPIO.setmode(GPIO.BCM)
     GPIO.setwarnings(False)
+    global debug
+    debug = args.stop
     args.func(args)
     
 if __name__ == "__main__":
