@@ -4,13 +4,13 @@
 @author: Carlton Joseph
 """
 import RPi.GPIO as GPIO
+#import GPIO # for debug
 import argparse
 from time import sleep
 import signal
 import sys
 
 gpios = [17, 18, 22, 23]
-debug = False
 
 def tristate(args):
     GPIO.setup(args.led, GPIO.IN)
@@ -75,9 +75,16 @@ def gpios_en(gpios, en=True):
     for gpio in gpios:
         GPIO.setup(gpio, state)
 
+def on_value(on):
+    if type(on) == str:
+        value = 1 if on == 'on' else 0
+    else:
+        value = 1 if on else 0
+    return value
+
 def gpios_on(gpios, on='on'):
     gpios = gpiosa(gpios)
-    value = 1 if on == 'on' else 0
+    value = on_value(on)
     for gpio in gpios:
         GPIO.output(gpio, value) 
 
@@ -94,8 +101,7 @@ def path(args):
     gpios_en(qs, True)
     gpios_on(qs, args.on)
 
-def glow_up(led, delay, start, end):
-    global debug
+def glow_up(led, delay, start, end, debug):
     stop_in = 0
     for brightness in range(start, end + 1):
         led.ChangeDutyCycle(brightness)
@@ -138,12 +144,107 @@ def glow(args):
     delay = args.time/1000.0/2 # /2 for 1/2 on and 1/2 off time
     step = delay/(end - start)
     while True:
-        glow_up(led, step, start, end)
+        glow_up(led, step, start, end, args.debug)
         sleep(args.highw/1000.0)
         glow_down(led, step, start, end)
         sleep(args.loww/1000.0)
 
+def incre(upcount, startdown):
+    if upcount < 100:
+        return upcount + 1, startdown
+    else:
+        return 0, startdown + 1
+    
 def glow2(args):
+    global gpios
+    start, end = start_end(args)
+    
+    delay = args.time/1000.0/2 # /2 for 1/2 on and 1/2 off time
+    step = delay/(end - start)
+    toggle = True
+
+    gpios_en(gpios) 
+    gpios_on(gpios, False) 
+    q1s = gpios_path(gpios, 'one')
+    q1s = [q1s[1], q1s[0]] # avoids glitch in circuit
+    q2s = gpios_path(gpios, 'two')
+    q2s = [q2s[1], q2s[0]] # avoids glitch in circuit
+    
+    on2off = 0.0000001
+    bigloop = 1000
+    smallloop = int(bigloop/10)
+
+    upcount = 0
+    startup = start
+    startupinc = 1
+    upon = False
+
+    downcount = smallloop
+    startdown = end - 1
+    startdowninc = -1
+    downon = False
+
+    toggle = 0
+
+    bigloops = 0 # for debug
+    while True:
+        sleep(0.00001)
+        if toggle % 2:
+            gpios_on(q2s, 'off')
+            sleep(on2off)
+            if startup < start:
+                startup = start 
+                startupinc = 1
+            if upcount >= startup and upcount < end:
+                gpios_on(q1s, 'on')
+                upon = True
+            else:
+                gpios_on(q1s, 'off')
+                if startup < end:
+                    if upcount == end:
+                        startup = startup + startupinc
+                else:
+                    if not upon:
+                        startupinc = -1 if startupinc == 1 else 1
+                        startup = startup + startupinc - 1
+                upon = False
+            upcount = upcount + 1 if upcount < (smallloop - 1) else 0
+        else:
+            gpios_on(q1s, 'off')
+            sleep(on2off)
+            if startdown >= end:
+                startdown = end - 2
+                startdowninc = -1
+            if downcount >= startdown and downcount < end:
+                gpios_on(q2s, 'on')
+                downon = True
+            else:
+                gpios_on(q2s, 'off')
+                if startdown >= start:
+                    if downcount == end:
+                        startdown = startdown + startdowninc
+                else:
+                    if not downon:
+                        startdowninc = -1 if startdowninc == 1 else 1
+                        startdown = startdown + startdowninc + 1
+                downon = False
+            downcount = downcount + 1 if downcount < (smallloop - 1) else 0
+            
+        toggle = toggle + 1 if toggle < bigloop else 0
+        if args.debug:
+            do = logic(downon) 
+            so = logic(upon)
+            msg = "{: 4d}{: 3d}{: 3d} {}{: 3d}{: 3d} {}"
+            fmtstr = msg.format(toggle, startup, upcount, so, startdown, downcount, do)
+            print(fmtstr)
+            if toggle == bigloop:
+                bigloops += 1
+            if bigloops >=  2:
+                return
+
+logic = lambda ison: " |" if ison else "| "
+        
+def glow2old(args):
     start, end = start_end(args)
     
     delay = args.time/1000.0/2 # /2 for 1/2 on and 1/2 off time
@@ -192,7 +293,7 @@ def main():
 
     parser = argparse.ArgumentParser(description='Contro the raspberry pi GPIO pins.')
     parser.add_argument('-l', '--led', help='LED to test', type=int, default=17)
-    parser.add_argument('-s', '--stop', help='Stop at debug break points', action='store_true')
+    parser.add_argument('-d', '--debug', help='Enable debug', action='store_true')
     
     subparsers = parser.add_subparsers(help='Command to execute')
 
@@ -245,14 +346,12 @@ def main():
     highw(parser_s)
 
     args = parser.parse_args()
-    if len(vars(args)) < 2:
+    if len(sys.argv) < 2: 
         parser.print_help()
         return
     
     GPIO.setmode(GPIO.BCM)
     GPIO.setwarnings(False)
-    global debug
-    debug = args.stop
     args.func(args)
     
 if __name__ == "__main__":
