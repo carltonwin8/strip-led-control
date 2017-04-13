@@ -159,10 +159,6 @@ def glow2(args):
     global gpios
     start, end = start_end(args)
     
-    delay = args.time/1000.0/2 # /2 for 1/2 on and 1/2 off time
-    step = delay/(end - start)
-    toggle = True
-
     gpios_en(gpios) 
     gpios_on(gpios, False) 
     q1s = gpios_path(gpios, 'one')
@@ -188,7 +184,7 @@ def glow2(args):
 
     bigloops = 0 # for debug
     while True:
-        sleep(0.00001)
+        sleep(0.000001 * args.interval)
         if toggle % 2:
             gpios_on(q2s, 'off')
             sleep(on2off)
@@ -321,8 +317,8 @@ def main():
     parser_s.add_argument('-f', '--freq', help='frequency in hz', type=int, default=1000)
 
     interval = lambda parser: parser.add_argument('-t', '--time', type=int, default=5000, help="glow interval in milliseconds")
-    start = lambda parser: parser.add_argument('-s', '--start', type=int, default=0, choices=range(0,100), help="percent brightness to start with")
-    end = lambda parser: parser.add_argument('-e', '--end', type=int, default=100, choices=range(0,100), help="percent brightness to end with")
+    start = lambda parser: parser.add_argument('-s', '--start', type=int, default=20, choices=range(0,100), help="percent brightness to start with")
+    end = lambda parser: parser.add_argument('-e', '--end', type=int, default=90, choices=range(0,100), help="percent brightness to end with")
     loww = lambda parser: parser.add_argument('-l', '--loww', type=int, default=1000, help="wait time at low brightness")
     highw = lambda parser: parser.add_argument('-b', '--highw', type=int, default=1000, help="wait time at high brightness")
     top = lambda parser: parser.add_argument('-q', '--top', choices=['top','bottom'], help="transistor that toggles", default='bottom')
@@ -339,11 +335,9 @@ def main():
 
     parser_s = subparsers.add_parser('glow2', help='makes two LEDs glow')
     parser_s.set_defaults(func=glow2)
-    interval(parser_s)
+    parser_s.add_argument('-i', '--interval', type=int, default=40, choices=range(1,101), help="glow interval increase")
     start(parser_s)
     end(parser_s)
-    loww(parser_s)
-    highw(parser_s)
 
     args = parser.parse_args()
     if len(sys.argv) < 2: 
