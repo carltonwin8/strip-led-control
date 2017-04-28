@@ -15,16 +15,6 @@ with LED strip once the circuit and software has been debugged and working.
 
 All phases not shown are done.
 
-### Phase 3
-
-Once [Phase 2] is operational solder down the components on a plated through
-hole board and verify the circuit works with the test LED setup shown in the
-schematics.
-
-### Phase 4
-
-Replace the LED test setup and verify the circuit board works the LED strip.
-
 ### Phase 5
 
 Write software to allow Internet control of the board.
