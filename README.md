@@ -8,8 +8,8 @@ Use the raspberry pi to control a LED light strip.
 | --- | --- |
 | ![](images/schematic.png) | ![](images/perfboard.png) |
 
-The test LED circuit between the signals LED+ and LED- will be replaced
-with LED strip once the circuit and software has been debugged and working.
+The test LED circuit between the signals LED+ and LED- is be replaced
+with LED strip for actual use.
 
 ## Implementation Plan
 
